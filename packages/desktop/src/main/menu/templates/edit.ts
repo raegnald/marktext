@@ -22,6 +22,7 @@ export default function(keybindings: Keybindings): MenuItemConstructorOptions {
     : []
 
   return {
+    id: 'editMenuItem',
     label: t('menu.edit.edit'),
     submenu: [
       {

@@ -80,6 +80,7 @@ declare global {
     isFullScreen(): Promise<boolean>
     popupMenu(template: MenuTemplate, position?: MenuPopupPosition): void
     popupApplicationMenu(position?: MenuPopupPosition): void
+    popupSubmenu(name: 'file' | 'edit' | 'view' | 'cogwheel', position?: MenuPopupPosition): void
   }
 
   interface ElectronAPI {

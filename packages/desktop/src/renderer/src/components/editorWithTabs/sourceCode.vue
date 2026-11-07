@@ -15,6 +15,7 @@ import {
 import { ref, shallowRef, markRaw, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useEditorStore } from '@/store/editor'
 import { usePreferencesStore } from '@/store/preferences'
+import { useRibbonStore } from '@/store/ribbon'
 
 import { registerSourceViewState, documentViewChanged } from '@/services/documentViewState'
 import {
@@ -387,11 +388,183 @@ const handleScroll = (): void => {
   documentViewChanged()
 }
 
+const updateRibbonStateFromCodeMirror = (cm: CodeMirror.Editor) => {
+  const ribbonStore = useRibbonStore()
+  const historySize = cm.historySize()
+  ribbonStore.setHistoryState(historySize.undo > 0, historySize.redo > 0)
+
+  const doc = cm.getDoc()
+  const cursor = doc.getCursor('head')
+  const lineContent = doc.getLine(cursor.line) || ''
+
+  let block = 'paragraph'
+  if (/^#{1,6}\s/.test(lineContent)) {
+    const match = lineContent.match(/^(#{1,6})\s/)
+    if (match) {
+      block = `heading ${match[1].length}`
+    }
+  } else if (/^>\s?/.test(lineContent)) {
+    block = 'blockquote'
+  } else if (/^-\s\[[ xX]\]\s/.test(lineContent)) {
+    block = 'ul-task'
+  } else if (/^[-*+]\s/.test(lineContent)) {
+    block = 'ul-bullet'
+  } else if (/^\d+\.\s/.test(lineContent)) {
+    block = 'ol-order'
+  } else if (/^\|.+\|/.test(lineContent)) {
+    block = 'table'
+  } else if (/^```/.test(lineContent)) {
+    block = 'pre'
+  } else if (/^\$\$/.test(lineContent)) {
+    block = 'mathblock'
+  } else {
+    let inMath = false
+    let inFence = false
+    for (let i = 0; i <= cursor.line; i++) {
+      const l = doc.getLine(i)
+      if (l.trim().startsWith('$$')) inMath = !inMath
+      if (l.trim().startsWith('```')) inFence = !inFence
+    }
+    if (inMath) block = 'mathblock'
+    else if (inFence) block = 'pre'
+  }
+  ribbonStore.setActiveBlock(block)
+
+  const formats: Record<string, boolean> = {}
+  const selectedText = doc.getSelection()
+
+  const checkInlineFormat = (regex: RegExp, key: string) => {
+    if (selectedText && regex.test(selectedText)) {
+      formats[key] = true
+    }
+    const ch = cursor.ch
+    let match: RegExpExecArray | null
+    const globalRegex = new RegExp(regex.source, 'g')
+    while ((match = globalRegex.exec(lineContent)) !== null) {
+      if (ch >= match.index && ch <= match.index + match[0].length) {
+        formats[key] = true
+        break
+      }
+    }
+  }
+
+  checkInlineFormat(/\*\*[^*]+\*\*/, 'strong')
+  checkInlineFormat(/(?:^|[^*])\*[^*]+\*(?:[^*]|$)/, 'em')
+  checkInlineFormat(/<u>.*?<\/u>/, 'u')
+  checkInlineFormat(/~~.*?~~/, 'del')
+  checkInlineFormat(/<mark>.*?<\/mark>/, 'mark')
+  checkInlineFormat(/`[^`]+`/, 'inline_code')
+  checkInlineFormat(/\$[^$]+\$/, 'inline_math')
+  checkInlineFormat(/\[.*?\]\(.*?\)/, 'link')
+
+  ribbonStore.setActiveFormats(formats)
+}
+
+const handleSourceFormat = (type: unknown) => {
+  if (!editor.value || typeof type !== 'string') return
+  const doc = editor.value.getDoc()
+  const selection = doc.getSelection()
+  const from = doc.getCursor('from')
+  const to = doc.getCursor('to')
+
+  interface Delimiter {
+    open: string
+    close: string
+  }
+  const formatDelimiters: Record<string, Delimiter> = {
+    strong: { open: '**', close: '**' },
+    em: { open: '*', close: '*' },
+    u: { open: '<u>', close: '</u>' },
+    del: { open: '~~', close: '~~' },
+    mark: { open: '<mark>', close: '</mark>' },
+    inline_code: { open: '`', close: '`' },
+    inline_math: { open: '$', close: '$' },
+    link: { open: '[', close: '](url)' },
+    image: { open: '![', close: '](url)' }
+  }
+
+  const delim = formatDelimiters[type]
+  if (!delim) return
+
+  if (selection.length > 0) {
+    if (selection.startsWith(delim.open) && selection.endsWith(delim.close)) {
+      const unwrapped = selection.slice(delim.open.length, selection.length - delim.close.length)
+      doc.replaceRange(unwrapped, from, to)
+    } else {
+      doc.replaceRange(`${delim.open}${selection}${delim.close}`, from, to)
+    }
+  } else {
+    doc.replaceRange(`${delim.open}${delim.close}`, from)
+    doc.setCursor({ line: from.line, ch: from.ch + delim.open.length })
+  }
+  editor.value.focus()
+  saveContent(editor.value)
+  updateRibbonStateFromCodeMirror(editor.value)
+}
+
+const handleSourceParagraph = (type: unknown) => {
+  if (!editor.value || typeof type !== 'string') return
+  const doc = editor.value.getDoc()
+  const cursor = doc.getCursor('head')
+  const line = cursor.line
+  const lineContent = doc.getLine(line)
+
+  if (type.startsWith('heading ')) {
+    const level = parseInt(type.replace('heading ', ''), 10)
+    const hashes = '#'.repeat(level) + ' '
+    const stripped = lineContent.replace(/^#{1,6}\s*/, '')
+    doc.replaceRange(hashes + stripped, { line, ch: 0 }, { line, ch: lineContent.length })
+  } else if (type === 'paragraph') {
+    const stripped = lineContent.replace(/^(#{1,6}\s*|>\s*|[-*+]\s*(\[[ xX]\]\s*)?|\d+\.\s*)/, '')
+    doc.replaceRange(stripped, { line, ch: 0 }, { line, ch: lineContent.length })
+  } else if (type === 'blockquote') {
+    if (lineContent.startsWith('> ')) {
+      doc.replaceRange(lineContent.slice(2), { line, ch: 0 }, { line, ch: lineContent.length })
+    } else {
+      doc.replaceRange('> ' + lineContent, { line, ch: 0 }, { line, ch: lineContent.length })
+    }
+  } else if (type === 'ul-bullet') {
+    if (/^[-*+]\s/.test(lineContent)) {
+      doc.replaceRange(lineContent.replace(/^[-*+]\s/, ''), { line, ch: 0 }, { line, ch: lineContent.length })
+    } else {
+      doc.replaceRange('- ' + lineContent, { line, ch: 0 }, { line, ch: lineContent.length })
+    }
+  } else if (type === 'ol-order') {
+    if (/^\d+\.\s/.test(lineContent)) {
+      doc.replaceRange(lineContent.replace(/^\d+\.\s/, ''), { line, ch: 0 }, { line, ch: lineContent.length })
+    } else {
+      doc.replaceRange('1. ' + lineContent, { line, ch: 0 }, { line, ch: lineContent.length })
+    }
+  } else if (type === 'ul-task') {
+    if (/^-\s\[[ xX]\]\s/.test(lineContent)) {
+      doc.replaceRange(lineContent.replace(/^-\s\[[ xX]\]\s/, ''), { line, ch: 0 }, { line, ch: lineContent.length })
+    } else {
+      doc.replaceRange('- [ ] ' + lineContent, { line, ch: 0 }, { line, ch: lineContent.length })
+    }
+  } else if (type === 'mathblock') {
+    doc.replaceRange('\n$$\n\n$$\n', cursor)
+    doc.setCursor({ line: cursor.line + 2, ch: 0 })
+  } else if (type === 'pre') {
+    doc.replaceRange('\n```\n\n```\n', cursor)
+    doc.setCursor({ line: cursor.line + 2, ch: 0 })
+  } else if (type === 'table') {
+    const tableTemplate = '\n| Header 1 | Header 2 | Header 3 |\n| --- | --- | --- |\n| Cell 1 | Cell 2 | Cell 3 |\n'
+    doc.replaceRange(tableTemplate, cursor)
+  } else if (type === 'hr') {
+    doc.replaceRange('\n---\n', cursor)
+  }
+
+  editor.value.focus()
+  saveContent(editor.value)
+  updateRibbonStateFromCodeMirror(editor.value)
+}
+
 const listenChange = (cm: CodeMirror.Editor) => {
   cm.on('cursorActivity', (instance: CodeMirror.Editor) => {
     saveContent(instance)
     updateSelectionWordCount(instance)
     setActiveHeadingAtLine(instance.getCursor().line)
+    updateRibbonStateFromCodeMirror(instance)
   })
 }
 
@@ -442,6 +615,8 @@ onMounted(() => {
   bus.on('selectAll', handleSelectAll)
   bus.on('undo', handleUndo)
   bus.on('redo', handleRedo)
+  bus.on('source-format', handleSourceFormat)
+  bus.on('source-paragraph', handleSourceParagraph)
   bus.on('image-action', handleImageAction)
   bus.on('scroll-to-header', handleScrollToHeader)
 
@@ -466,6 +641,7 @@ onMounted(() => {
   editor.value = codeMirrorInstance
   tabId.value = id
   updateSelectionWordCount(codeMirrorInstance)
+  updateRibbonStateFromCodeMirror(codeMirrorInstance)
 
   // Pane resizing rewraps lines without triggering CodeMirror's window-resize listener.
   let measuredWidth = 0
@@ -509,6 +685,8 @@ onBeforeUnmount(() => {
   bus.off('selectAll', handleSelectAll)
   bus.off('undo', handleUndo)
   bus.off('redo', handleRedo)
+  bus.off('source-format', handleSourceFormat)
+  bus.off('source-paragraph', handleSourceParagraph)
   bus.off('image-action', handleImageAction)
   editorStore.SET_SELECTION_WORD_COUNT(null)
   lastSelectionKey = ''

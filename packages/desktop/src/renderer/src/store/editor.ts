@@ -1487,7 +1487,7 @@ interface ApplicationMenuState {
   affiliation: Record<string, boolean>
 }
 
-const createApplicationMenuState = ({
+export const createApplicationMenuState = ({
   start,
   end,
   affiliation,

@@ -147,7 +147,8 @@ import {
   pruneSourceHistory
 } from '../../services/documentMode'
 import { popupContextMenu } from '../../contextMenu/popupMenu'
-import { useEditorStore } from '@/store/editor'
+import { useEditorStore, createSelectionFormatState, createApplicationMenuState } from '@/store/editor'
+import { useRibbonStore } from '@/store/ribbon'
 import { useProjectStore } from '@/store/project'
 import { storeToRefs } from 'pinia'
 import { useI18n } from 'vue-i18n'
@@ -1370,12 +1371,13 @@ const handlePrintServiceClearup = () => {
 // clicked checkbox menu item's auto-toggled OS checkmark would otherwise linger.
 const pushSelectionMenuState = (changes: ISelectionChangePayload) => {
   const { selection } = changes
-  editorStore.SELECTION_CHANGE({
+  const adapted = {
     ...adaptSelectionChange(changes),
     // Read the live block tree (O(1)) rather than getState(), which deep-clones
     // the whole document — this runs on every cursor move.
     hasFrontMatter: editor.value?.editor?.scrollPage?.firstChild?.blockName === 'frontmatter'
-  })
+  }
+  editorStore.SELECTION_CHANGE(adapted)
   const formats =
     selection?.kind === SelectionType.TEXT
       ? selection.context.formats.map((token) => ({
@@ -1383,6 +1385,17 @@ const pushSelectionMenuState = (changes: ISelectionChangePayload) => {
         }))
       : []
   editorStore.SELECTION_FORMATS(formats)
+
+  const ribbonStore = useRibbonStore()
+  ribbonStore.setActiveFormats(createSelectionFormatState(formats))
+  const appMenuState = createApplicationMenuState(adapted)
+  if (appMenuState.affiliation) {
+    ribbonStore.updateFromAffiliation(appMenuState.affiliation)
+  }
+  const history = editor.value?.editor?.history
+  if (history && typeof history.canUndo === 'function') {
+    ribbonStore.setHistoryState(history.canUndo(), history.canRedo())
+  }
 }
 
 const handleEditParagraph = (type: unknown) => {

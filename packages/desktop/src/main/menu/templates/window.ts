@@ -62,6 +62,7 @@ export default function(keybindings: Keybindings): MenuItemConstructorOptions {
   ]
 
   const menu: MenuItemConstructorOptions = {
+    id: 'windowMenuItem',
     label: t('menu.window.title'),
     role: 'window',
     submenu

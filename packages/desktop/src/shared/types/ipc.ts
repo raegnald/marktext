@@ -143,6 +143,10 @@ export interface IpcSendChannels {
   'mt::make-screenshot': []
   'mt::menu::popup': [template: MenuTemplate, position?: MenuPopupPosition]
   'mt::menu::popup-application': [position?: MenuPopupPosition]
+  'mt::menu::popup-submenu': [
+    name: 'file' | 'edit' | 'view' | 'cogwheel',
+    position?: MenuPopupPosition
+  ]
   'mt::open-file': [filePath: string, options?: SidebarOpenOptions]
   'mt::open-file-by-window-id': [windowId: number, filePath: string, options?: unknown]
   'mt::open-directory-by-window-id': [windowId: number, dirPath: string]

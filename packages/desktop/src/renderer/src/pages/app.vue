@@ -3,7 +3,7 @@
     <side-bar v-if="init" />
 
     <div class="editor-middle">
-      <title-bar
+      <ribbon
         :project="projectTree"
         :pathname="pathname"
         :filename="filename"
@@ -45,7 +45,7 @@ import { storeToRefs } from 'pinia'
 import { addStyles, addThemeStyle, addCustomStyle, type AddStylesOptions } from '@/util/theme'
 import Recent from '@/components/recent/index.vue'
 import EditorWithTabs from '@/components/editorWithTabs/index.vue'
-import TitleBar from '@/components/titleBar/index.vue'
+import Ribbon from '@/components/ribbon/index.vue'
 import SideBar from '@/components/sideBar/index.vue'
 import AboutDialog from '@/components/about/index.vue'
 import CommandPalette from '@/components/commandPalette/index.vue'

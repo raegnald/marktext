@@ -87,6 +87,7 @@ export default function(): MenuItemConstructorOptions {
   ]
 
   const helpMenu: MenuItemConstructorOptions = {
+    id: 'helpMenuItem',
     label: t('menu.help.help'),
     role: 'help',
     submenu

@@ -97,6 +97,7 @@ export default function(keybindings: Keybindings): MenuItemConstructorOptions {
   ]
 
   const viewMenu: MenuItemConstructorOptions = {
+    id: 'viewMenuItem',
     label: t('menu.view.view'),
     submenu
   }

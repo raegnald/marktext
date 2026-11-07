@@ -8,6 +8,8 @@ import {
 } from 'electron'
 import log from 'electron-log'
 import type { MenuTemplate, MenuTemplateItem, MenuPopupPosition } from '@shared/types/menu'
+import { t } from '../i18n'
+import { userSetting } from '../menu/actions/marktext'
 
 const windowFromEvent = (event: IpcMainEvent): BrowserWindow | null =>
   BrowserWindow.fromWebContents(event.sender)
@@ -127,4 +129,86 @@ export const registerWindowHandlers = (): void => {
       log.error('application menu popup failed:', err)
     }
   })
+
+  ipcMain.on(
+    'mt::menu::popup-submenu',
+    (event, name: 'file' | 'edit' | 'view' | 'cogwheel', position?: MenuPopupPosition) => {
+      const win = windowFromEvent(event)
+      if (!win) return
+      try {
+        const appMenu = Menu.getApplicationMenu()
+        if (!appMenu) return
+
+        if (name === 'cogwheel') {
+          const cogwheelMenu = new Menu()
+          cogwheelMenu.append(
+            new MenuItem({
+              label: t('menu.file.preferences'),
+              accelerator: 'CmdOrCtrl+,',
+              click: () => {
+                userSetting()
+              }
+            })
+          )
+          cogwheelMenu.append(new MenuItem({ type: 'separator' }))
+
+          const themeItem =
+            appMenu.getMenuItemById('themeMenu') ?? appMenu.getMenuItemById('themeMenuItem')
+          if (themeItem?.submenu) {
+            cogwheelMenu.append(
+              new MenuItem({
+                label: themeItem.label ?? t('menu.theme.theme'),
+                submenu: themeItem.submenu
+              })
+            )
+          }
+
+          const windowItem =
+            appMenu.getMenuItemById('windowMenuItem') ??
+            appMenu.items.find((item) => item.role === 'window')
+          if (windowItem?.submenu) {
+            cogwheelMenu.append(
+              new MenuItem({
+                label: windowItem.label ?? t('menu.window.title'),
+                submenu: windowItem.submenu
+              })
+            )
+          }
+
+          const helpItem =
+            appMenu.getMenuItemById('helpMenuItem') ??
+            appMenu.items.find((item) => item.role === 'help')
+          if (helpItem?.submenu) {
+            cogwheelMenu.append(
+              new MenuItem({
+                label: helpItem.label ?? t('menu.help.help'),
+                submenu: helpItem.submenu
+              })
+            )
+          }
+
+          cogwheelMenu.popup({ window: win, x: position?.x, y: position?.y })
+          return
+        }
+
+        const menuIdMap: Record<string, string> = {
+          file: 'fileMenuItem',
+          edit: 'editMenuItem',
+          view: 'viewMenuItem'
+        }
+        const targetId = menuIdMap[name]
+        const menuItem = targetId ? appMenu.getMenuItemById(targetId) : null
+        if (menuItem?.submenu) {
+          menuItem.submenu.popup({ window: win, x: position?.x, y: position?.y })
+        } else {
+          const fallback = appMenu.items.find(
+            (item) => (item.role as string) === name || item.label?.toLowerCase() === name.toLowerCase()
+          )
+          fallback?.submenu?.popup({ window: win, x: position?.x, y: position?.y })
+        }
+      } catch (err) {
+        log.error(`menu popup-submenu failed for ${name}:`, err)
+      }
+    }
+  )
 }

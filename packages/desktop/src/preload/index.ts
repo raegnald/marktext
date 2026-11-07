@@ -115,7 +115,11 @@ const windowControlAPI = {
   popupMenu: (template: unknown, position?: { x: number; y: number }) =>
     send('mt::menu::popup', template as never, position),
   popupApplicationMenu: (position?: { x: number; y: number }) =>
-    send('mt::menu::popup-application', position)
+    send('mt::menu::popup-application', position),
+  popupSubmenu: (
+    name: 'file' | 'edit' | 'view' | 'cogwheel',
+    position?: { x: number; y: number }
+  ) => send('mt::menu::popup-submenu', name, position)
 }
 
 // Keep pure path predicates synchronous for tab matching without filesystem IPC.
